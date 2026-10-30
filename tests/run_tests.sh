@@ -53,6 +53,8 @@ run "song screen: a confirmation left unconfirmed asks again weeks later (no loa
 
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/studio_drums_test" tests/studio_drums_test.c -lm
 run "drum lanes, kit audio, metronome, record arm, free take" "$OUT/studio_drums_test" "$OUT/drum-styles.wav"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/ricochet_test" tests/ricochet_test.c -lm
+run "RICO: the bouncing balls (walls -> scale degrees, no keys, recording)" "$OUT/ricochet_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/seq2_test" tests/seq2_test.c -lm
 run "sequencer 2.0: no drift, ratchets, roll, erase / undo, ghost / hard, chords, mute / solo, nudge, locks" "$OUT/seq2_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/hold_rec_test" tests/hold_rec_test.c -lm

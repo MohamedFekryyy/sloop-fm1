@@ -1523,6 +1523,242 @@ static void erase_now(track_t *t)             /* a key just went down */
 }
 static int erasing(const track_t *t) { return trk_index(t) == er_trk && (er_lanes || er_notes[0] || er_notes[1] || er_notes[2] || er_notes[3]); }
 
+
+/* ------------------------------------------------------- ricochet --- */
+/* AM_RICO: a generative mode. Balls bounce inside a regular polygon; every wall is a degree of the
+ * track's scale, and a ball hitting a wall plays it. No keys held and no grid: the balls run free at
+ * their own speed whatever the transport does, as the web toy of the same idea does; what they play is
+ * recorded and goes to MIDI OUT like the arp's notes. On the drum track (and the unscaled maps: the GM
+ * kit, SLICE) a wall plays that key of the track's own map.
+ *   RATE  the balls' speed (1..6)    OCT  the balls (1..4)    GATE  the notes' length
+ *   SWG   the walls (3..12)          PROB a hit sounds        HOLD, ORD  unused
+ * The ARP page draws the polygon and the balls while RICO is on (ui_draw.c graph_rico). Positions and
+ * speeds are Q16.16 in a 1024 x 1024 field, the walls' normals Q15: the sim is exact integer, the same
+ * on the device and on the host (tests/ricochet_test.c). */
+static void arp_end(track_t *t);
+static void arp_play(track_t *t, uint32_t n);
+
+#define RICO_RAD 400                                /* the polygon's radius (the field is 1024 x 1024) */
+#define RICO_BALL 18                                /* a ball's radius */
+static const uint16_t RICO_SPEED[6] = {154, 256, 410, 614, 922, 1382};   /* field units / s, by RATE */
+
+static uint32_t rico_isqrt64(uint64_t v)            /* floor(sqrt(v)) */
+{
+    uint64_t r = 0, b;
+    int k;
+    for (k = 62; k >= 0; k -= 2) {
+        b = r | (1ULL << k);
+        r >>= 1;
+        if (v >= b) {
+            v -= b;
+            r += 1ULL << k;
+        }
+    }
+    return (uint32_t)r;
+}
+
+static uint32_t rico_udiv64(uint64_t num, uint32_t den)          /* no __divdi3 on the pi32: long division */
+{
+    uint32_t q = 0, r = 0;
+    int k;
+    for (k = 63; k >= 0; k--) {
+        r = (r << 1) | (uint32_t)((num >> k) & 1u);
+        if (r >= den) {
+            r -= den;
+            q |= 1u << k;
+        }
+    }
+    return q;
+}
+
+/* num / den with the sign of num (den > 0), for the sim's Q16 / Q15 scaling */
+static int32_t rico_sdiv64(int64_t num, uint32_t den)
+{
+    return num < 0 ? -(int32_t)rico_udiv64((uint64_t)-num, den) : (int32_t)rico_udiv64((uint64_t)num, den);
+}
+
+static int32_t rico_sin(uint32_t a) { return SINE[a & 1023u]; }        /* a: 1024 a turn; Q15 */
+static int32_t rico_cos(uint32_t a) { return SINE[(a + 256u) & 1023u]; }
+
+static uint32_t rico_walls_of(const track_t *t)                        /* SWG 0..100 -> 3..12 walls */
+{
+    return 3u + ((uint32_t)t->p[P_ASWING] * 9u + 50u) / 100u;
+}
+
+/* push a ball back inside the polygon if numeric drift or a shape change left it over a wall */
+static void rico_project(track_t *t, uint32_t i)
+{
+    uint32_t w;
+    int pass;
+    for (pass = 0; pass < 2; pass++)
+        for (w = 0; w < t->rico_walls; w++) {
+            int64_t d = (((int64_t)t->rico_px[i] - t->rico_ax[w]) * t->rico_nx[w] +
+                         ((int64_t)t->rico_py[i] - t->rico_ay[w]) * t->rico_ny[w]) >> 15;
+            if (d < (RICO_BALL << 16)) {
+                t->rico_px[i] += (int32_t)((t->rico_nx[w] * ((RICO_BALL << 16) - d)) >> 15);
+                t->rico_py[i] += (int32_t)((t->rico_ny[w] * ((RICO_BALL << 16) - d)) >> 15);
+            }
+        }
+}
+
+static void rico_build(track_t *t)                                     /* the polygon from the walls count */
+{
+    uint32_t n = rico_walls_of(t), i;
+    int32_t vx[RICO_MAX_WALLS], vy[RICO_MAX_WALLS];
+    for (i = 0; i < n; i++) {
+        uint32_t a = i * 1024u / n + 768u;                            /* from the top (-90 deg) */
+        vx[i] = (512 << 16) + ((RICO_RAD * rico_cos(a)) << 1);
+        vy[i] = (480 << 16) + ((RICO_RAD * rico_sin(a)) << 1);
+    }
+    for (i = 0; i < n; i++) {
+        uint32_t j = (i + 1u) % n;
+        int64_t nx = (int64_t)vy[i] - vy[j], ny = (int64_t)vx[j] - vx[i];   /* the edge's normal, Q16 */
+        uint32_t len = rico_isqrt64((uint64_t)(nx * nx + ny * ny));
+        int32_t qx = rico_sdiv64(nx << 15, len), qy = rico_sdiv64(ny << 15, len);
+        if ((((int64_t)(512 << 16) - vx[i]) * qx + ((int64_t)(480 << 16) - vy[i]) * qy) < 0) {
+            qx = -qx;
+            qy = -qy;                                                 /* the normal points inward */
+        }
+        t->rico_ax[i] = vx[i];
+        t->rico_ay[i] = vy[i];
+        t->rico_nx[i] = qx;
+        t->rico_ny[i] = qy;
+    }
+    t->rico_walls = (uint8_t)n;
+    for (i = 0; i < t->rico_balls; i++)
+        rico_project(t, i);
+}
+
+static void rico_spawn(track_t *t, uint32_t i)                         /* a ball from the middle, fanned out */
+{
+    uint32_t a = 114u + i * 1024u / (t->rico_balls ? (uint32_t)t->rico_balls : 1u);
+    int32_t sp = (int32_t)RICO_SPEED[t->rico_speed] << 16;
+    t->rico_px[i] = 512 << 16;
+    t->rico_py[i] = 480 << 16;
+    t->rico_vx[i] = (int32_t)(((int64_t)sp * rico_cos(a)) >> 15);
+    t->rico_vy[i] = (int32_t)(((int64_t)sp * rico_sin(a)) >> 15);
+}
+
+static uint32_t rico_ball_speed(const track_t *t, uint32_t i)          /* Q16 */
+{
+    return rico_isqrt64((uint64_t)((int64_t)t->rico_vx[i] * t->rico_vx[i] +
+                                   (int64_t)t->rico_vy[i] * t->rico_vy[i]));
+}
+
+/* a knob turned: the polygon, the balls or the speed follow (the balls' directions stay) */
+static void rico_config(track_t *t)
+{
+    uint32_t walls = rico_walls_of(t), balls = (uint32_t)t->p[P_AOCT], speed = (uint32_t)t->p[P_ARATE] % 6u, i;
+    if (balls < 1u)
+        balls = 1u;
+    if (balls > RICO_MAX_BALLS)
+        balls = RICO_MAX_BALLS;
+    if (!t->rico_on) {
+        t->rico_on = 1;
+        t->rico_speed = (uint8_t)speed;
+        t->rico_balls = (uint8_t)balls;
+        t->rico_walls = 0;
+        rico_build(t);
+        for (i = 0; i < balls; i++)
+            rico_spawn(t, i);
+        return;
+    }
+    if (walls != t->rico_walls)
+        rico_build(t);
+    if (balls > t->rico_balls) {
+        for (i = t->rico_balls; i < balls; i++)
+            rico_spawn(t, i);
+    }
+    t->rico_balls = (uint8_t)balls;
+    if (speed != t->rico_speed) {
+        int32_t sp = (int32_t)RICO_SPEED[speed] << 16;
+        for (i = 0; i < t->rico_balls; i++) {
+            uint32_t s = rico_ball_speed(t, i);
+            if (s) {
+                t->rico_vx[i] = rico_sdiv64((int64_t)t->rico_vx[i] * sp, s);
+                t->rico_vy[i] = rico_sdiv64((int64_t)t->rico_vy[i] * sp, s);
+            } else {
+                t->rico_vx[i] = sp;
+                t->rico_vy[i] = 0;
+            }
+        }
+        t->rico_speed = (uint8_t)speed;
+    }
+}
+
+/* one ball by dt (Q16 s); the wall it hit this step, or -1. Substeps keep a fast ball from tunnelling */
+static int rico_step(track_t *t, uint32_t i, uint32_t dt)
+{
+    int64_t r = RICO_BALL << 16;
+    uint32_t dist = (uint32_t)(((uint64_t)rico_ball_speed(t, i) * dt) >> 16);
+    uint32_t steps = dist / (uint32_t)(RICO_BALL << 15) + 1u, s;
+    uint32_t h = dt / steps;
+    int hit = -1;
+    for (s = 0; s < steps; s++) {
+        uint32_t w;
+        t->rico_px[i] += (int32_t)(((int64_t)t->rico_vx[i] * h) >> 16);
+        t->rico_py[i] += (int32_t)(((int64_t)t->rico_vy[i] * h) >> 16);
+        for (w = 0; w < t->rico_walls; w++) {
+            int64_t d = (((int64_t)t->rico_px[i] - t->rico_ax[w]) * t->rico_nx[w] +
+                         ((int64_t)t->rico_py[i] - t->rico_ay[w]) * t->rico_ny[w]) >> 15;
+            int64_t vn = ((int64_t)t->rico_vx[i] * t->rico_nx[w] + (int64_t)t->rico_vy[i] * t->rico_ny[w]) >> 15;
+            if (d < r && vn < 0) {
+                t->rico_vx[i] -= (int32_t)((2 * vn * t->rico_nx[w]) >> 15);
+                t->rico_vy[i] -= (int32_t)((2 * vn * t->rico_ny[w]) >> 15);
+                t->rico_px[i] += (int32_t)((t->rico_nx[w] * (r - d)) >> 15);
+                t->rico_py[i] += (int32_t)((t->rico_ny[w] * (r - d)) >> 15);
+                if (hit < 0)
+                    hit = (int)w;
+            }
+        }
+    }
+    return hit;
+}
+
+/* the wall's note: its degree of the track's scale (wall 0 the root, climbing as the walls do), the
+ * track's own map on the drum track and the unscaled engines */
+static uint32_t rico_note(const track_t *t, uint32_t wall)
+{
+    uint32_t mask, cnt = 0, oct, deg, i;
+    if (!kb_scaled(t))
+        return kb_map(t, wall & 15u);
+    mask = scale_mask(t) & 0xFFFu;
+    for (i = 0; i < 12u; i++)
+        cnt += (mask >> i) & 1u;
+    oct = cnt ? wall / cnt : 0;
+    deg = cnt ? wall % cnt : 0;
+    for (i = 0; i < 12u; i++)
+        if ((mask >> i) & 1u) {
+            if (!deg)
+                break;
+            deg--;
+        }
+    return (uint32_t)clamp(60 + (int32_t)t->p[P_ROOT] + (int32_t)t->p[P_TRANS] + 12 * (int32_t)oct + (int32_t)i,
+                           0, 127);
+}
+
+/* once per block, from arp_tick: the balls run free whatever the transport; a hit plays (and records,
+ * and goes to MIDI OUT, as the arp's notes). One note at a time: a hit ends the note before it */
+static void rico_tick(track_t *t, uint32_t adv)
+{
+    uint32_t bpm = (uint32_t)song.g[G_BPM] ? (uint32_t)song.g[G_BPM] : 120u;
+    uint32_t dt = rico_udiv64((uint64_t)adv << 16, bpm * FS), i;
+    int hit = -1;
+    rico_config(t);
+    for (i = 0; i < t->rico_balls; i++) {
+        int w = rico_step(t, i, dt);
+        if (w >= 0 && hit < 0)
+            hit = w;
+    }
+    if (hit >= 0 && (uint32_t)(rng() & 127u) <= (uint32_t)t->p[P_APROB]) {
+        uint32_t ms = 30u + (uint32_t)t->p[P_AGATE] * 4u;
+        arp_end(t);
+        t->arp_note = (uint8_t)rico_note(t, (uint32_t)hit);
+        arp_play(t, t->arp_note);
+        t->arp_off = rico_udiv64((uint64_t)ms * bpm * FS, 1000u);
+    }
+}
+
 /* ------------------------------------------------------------- arp --- */
 /* 2.6 (after Felucca 1.5, #191): where each track's held[i] came from, so the arp maps it again as it plays (arp_list:
  * TRN, ROOT, SCALE, QNT as they are now). held_key: the key + 1 (bits 0..4) and the octave buttons then + 3 (bits
@@ -1578,7 +1814,7 @@ static void arp_remove(track_t *t, uint32_t note)
  * CHORD all the held notes together (the first 4), an octave higher each step through OCT. ORD (Felucca 1.4) always
  * plays the notes in the order they were pressed (up to 2.6 it played as UP unless ARP 2 ORD was PLAY) */
 enum { AM_OFF, AM_UP, AM_DN, AM_UPDN, AM_RND, AM_ORD, AM_REPEAT, AM_DNUP, AM_UP8, AM_CONV, AM_DIVG, AM_PINKY,
-       AM_THUMB, AM_WALK, AM_CHORD };
+       AM_THUMB, AM_WALK, AM_CHORD, AM_RICO };
 
 /* the arp's note list (its length returned, 0: nothing to play; up to 64, + 1 for UP+8): the held notes as they play
  * now (#191), each once (*cnt of them), sorted or as played, over OCT octaves */
@@ -1726,6 +1962,10 @@ static void arp_tick(track_t *t, uint32_t adv)
         } else {
             t->arp_off -= adv;
         }
+    }
+    if (t->p[P_AMODE] == AM_RICO) {                 /* RICO: the balls play; no held notes, off the grid */
+        rico_tick(t, adv);
+        return;
     }
     if (!t->p[P_AMODE] || !t->nheld) {
         if (!t->nheld && t->arp_note)

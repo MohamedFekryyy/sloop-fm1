@@ -231,6 +231,8 @@ typedef struct {                 /* a lock: on step `step` the track's p[param] 
 /* a step's condition (SLOOP 2.4 fill, GLO + key 9 / 10): plays always, only during a fill, never during one */
 enum { FC_NORM, FC_FILL, FC_NOFILL };     /* (3: as FC_NORM) */
 
+#define RICO_MAX_WALLS 12u       /* seq.c AM_RICO: the polygon's most sides */
+#define RICO_MAX_BALLS 4u        /* ... and its most balls (P_AOCT 1..4) */
 typedef struct track {
     int16_t p[P_COUNT];
     uint8_t engine, preset;      /* engine: what the audio ISR renders */
@@ -278,6 +280,16 @@ typedef struct track {
     uint8_t seq_notes[4];        /* sounding seq notes */
     uint8_t seq_n;
     uint8_t seq_hold;            /* last step slides: keep the notes until the next step */
+    /* RICO (seq.c rico_tick): balls bounce in a polygon, a wall hit plays its degree of the track's
+     * scale. Positions and speeds Q16.16 in a 1024 x 1024 field; the walls' inward normals Q15. */
+    int32_t rico_px[RICO_MAX_BALLS], rico_py[RICO_MAX_BALLS];
+    int32_t rico_vx[RICO_MAX_BALLS], rico_vy[RICO_MAX_BALLS];
+    int32_t rico_ax[RICO_MAX_WALLS], rico_ay[RICO_MAX_WALLS];   /* the walls' anchors (the vertices) */
+    int32_t rico_nx[RICO_MAX_WALLS], rico_ny[RICO_MAX_WALLS];
+    uint8_t rico_walls;        /* the polygon's sides as built */
+    uint8_t rico_balls;        /* the balls in play */
+    uint8_t rico_speed;        /* the speed index as built */
+    uint8_t rico_on;           /* the sim is built */
     uint8_t seq_skip;            /* the step playing failed its fill condition: nothing of it sounds */
     uint8_t slide_glide;         /* next legato note glides (slide) */
     uint32_t seq_off;            /* units to the note-off of the step's notes */
