@@ -47,11 +47,13 @@ jobs:
           FELUCCA_BLE=1 python3 tools/build.py 2>&1 | tail -40
           cp build/felucca.bin build/ble.bin
       - name: Build BLE + USB audio off (FELUCCA_BLE=1 FELUCCA_UAC=0)
+        if: always()
         run: |
           set -o pipefail
           FELUCCA_BLE=1 FELUCCA_UAC=0 python3 tools/build.py 2>&1 | tail -20
           cp build/felucca.bin build/ble_uac0.bin
       - name: Size report
+        if: always()
         run: |
           python3 - <<'PY'
           import os
