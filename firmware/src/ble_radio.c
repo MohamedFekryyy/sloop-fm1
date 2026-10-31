@@ -7,6 +7,7 @@
  * cable 2. No sending, no pairing, no central role, no persistence: the address is a probe constant.
  * The stack runs in radio IRQs 45 (event) + 29 (RX) at priority 2; the main loop drains the ring. */
 #define BLE_DEVICE_NAME "SLOOP"
+#include "fm1_flash.h"     /* irq_save/irq_restore: declare before first use (unity build order) */
 #include "ble_stack.c"
 
 static struct { uint32_t pkt; uint16_t ts; } blr_in[64];
