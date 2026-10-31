@@ -41,6 +41,19 @@ jobs:
           set -o pipefail
           python3 tools/build.py 2>&1 | tail -15
           cp build/felucca.bin build/baseline.bin
+      - name: Feature size map (baseline, exact from the linked elf)
+        run: |
+          ~/.jieli/toolchain/common/bin/objdump -t build/felucca.elf > /tmp/syms.txt
+          python3 - <<'PY'
+          rows = []
+          for ln in open("/tmp/syms.txt"):
+              t = ln.rsplit(None, 3)
+              if len(t) == 4 and all(c in "0123456789abcdef" for c in t[2]) and int(t[2], 16) >= 512:
+                  rows.append((int(t[2], 16), t[3], t[1].strip()))
+          rows.sort(reverse=True)
+          for n, name, sect in rows[:30]:
+              print(f"{n:>8} B  {sect:<10} {name}")
+          PY
       - name: Build minimal receive-only BLE (FELUCCA_BLE=1)
         run: |
           set -o pipefail
@@ -58,6 +71,29 @@ jobs:
           set -o pipefail
           FELUCCA_BLE=1 FELUCCA_UAC=0 FELUCCA_ICONS=0 FELUCCA_LOGO_TEXT=1 python3 tools/build.py 2>&1 | tail -20
           cp build/felucca.bin build/ble_trim.bin
+      - name: "RAM/pool measurement: BLE+trims, XIP window enlarged (MEASUREMENT ONLY, not a shippable image)"
+        if: always()
+        run: |
+          sed -i 's/LENGTH = 0x8DFBC/LENGTH = 0x9DFBC/' firmware/app.ld
+          set +e
+          FELUCCA_BLE=1 FELUCCA_UAC=0 FELUCCA_ICONS=0 FELUCCA_LOGO_TEXT=1 python3 tools/build.py 2>&1 | grep -E "  ok|FAIL|image [0-9]|overflow|exceeds" | head -25
+          echo "(build 'failure' above is the app-slot check after a successful link - the ok/FAIL lines are the data)"
+          ~/.jieli/toolchain/common/bin/objdump -t build/felucca.elf > /tmp/syms_ble.txt 2>/dev/null
+          python3 - <<'PY'
+          import os
+          if os.path.exists("/tmp/syms_ble.txt"):
+              rows = []
+              for ln in open("/tmp/syms_ble.txt"):
+                  t = ln.rsplit(None, 3)
+                  if len(t) == 4 and all(c in "0123456789abcdef" for c in t[2]) and int(t[2], 16) >= 256:
+                      rows.append((int(t[2], 16), t[3]))
+              ble = sorted((r for r in rows if "ble" in r[1].lower() or r[1].startswith("blr_")), reverse=True)
+              tot = sum(n for n, _ in ble)
+              print(f"BLE symbols total: {tot} B across {len(ble)} symbols; largest:")
+              for n, name in ble[:15]:
+                  print(f"{n:>8} B  {name}")
+          PY
+          exit 0
       - name: Size report
         if: always()
         run: |
