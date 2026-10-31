@@ -27,6 +27,7 @@ BLE_API void ble_app_midi_in(uint32_t pkt, uint16_t ts, uint16_t last_ts)
 }
 BLE_API void ble_app_state(void) { blr_role = ble_connected() ? 1u : 0u; }
 
+#if !FELUCCA_BLE_STUB                          /* the radio + its IRQs: target only (host tests use the stub) */
 /* the SDK board's constant trims (fm1-base bt_own.c; fm1_rf_cal.h measures the rest at every start) */
 static const struct ble_rf_trims BLR_TRIMS = {{0x0B, 0x0B}, {1, 7, 4, 7, 11, 1, 7}, {0}, {0}};
 
@@ -48,6 +49,7 @@ static void ble_radio_start(void)
     ble_enable(1);                          /* advertising starts */
     fm1_ble_irqs_hold(0);
 }
+#endif
 
 static void ble_radio_poll(void)            /* the main loop: BLE MIDI into the shared input queue */
 {
