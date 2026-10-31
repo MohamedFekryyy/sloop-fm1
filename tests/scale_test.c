@@ -169,7 +169,7 @@ static void arp_modes_test(void)
     memset(trk, 0, sizeof trk);
     memset(&song, 0, sizeof song);
     host_tracks_init();
-    assert(TP[P_AMODE].max == AM_CHORD);
+    assert(TP[P_AMODE].max == AM_RICO);  /* table covers OFF..CHORD; RICO sequences: ricochet_test.c */
     t->p[P_AOCT] = 1, t->p[P_AORDER] = 0, t->p[P_AHOLD] = 0;
     memset(held_key, 0, sizeof held_key);          /* (MIDI notes: played as they are) */
     t->held[0] = 67, t->held[1] = 60, t->held[2] = 64, t->nheld = 3;   /* pressed G, C, E */
