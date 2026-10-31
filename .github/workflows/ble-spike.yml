@@ -38,28 +38,26 @@ jobs:
         run: pip3 install Pillow
       - name: Build baseline (FELUCCA_BLE=0)
         run: |
+          set -o pipefail
           python3 tools/build.py 2>&1 | tail -15
           cp build/felucca.bin build/baseline.bin
       - name: Build minimal receive-only BLE (FELUCCA_BLE=1)
         run: |
-          set +e
+          set -o pipefail
           FELUCCA_BLE=1 python3 tools/build.py 2>&1 | tail -40
-          echo "ble build exit: $?"
-          ls -la build/ 2>/dev/null
-          exit 0
+          cp build/felucca.bin build/ble.bin
       - name: Build BLE + USB audio off (FELUCCA_BLE=1 FELUCCA_UAC=0)
         run: |
-          set +e
+          set -o pipefail
           FELUCCA_BLE=1 FELUCCA_UAC=0 python3 tools/build.py 2>&1 | tail -20
-          [ -f build/felucca.bin ] && cp build/felucca.bin build/ble_uac0.bin
-          exit 0
+          cp build/felucca.bin build/ble_uac0.bin
       - name: Size report
         run: |
           python3 - <<'PY'
           import os
           SLOT = 581564
           for f, label in (("build/baseline.bin", "baseline"),
-                           ("build/felucca.bin", "last-built variant"),
+                           ("build/ble.bin", "BLE"),
                            ("build/ble_uac0.bin", "BLE + UAC off")):
               if os.path.exists(f):
                   n = os.path.getsize(f)
