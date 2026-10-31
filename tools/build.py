@@ -180,17 +180,26 @@ def build_loader():
 def build_app():
     flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_CDC", "FELUCCA_UART",
-                 "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_CPU1", "FELUCCA_LOGO_TEXT"):
+                 "FELUCCA_ICONS", "FELUCCA_SLICE", "FELUCCA_CPU1", "FELUCCA_LOGO_TEXT", "FELUCCA_BLE"):
         v = os.environ.get(flag)    # unset: the default in firmware/src/felucca.c
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")
+    ble = os.environ.get("FELUCCA_BLE") == "1"
+    if ble:
+        flags += ["-Ifirmware/ble", "-DBLE_API=static"]  # unity build: the stack functions static
+        gen = SRC / "build" / "gen"
+        gen.mkdir(parents=True, exist_ok=True)
+        t = (SRC / "firmware" / "hal" / "ble_rf_tables_v15.h").read_bytes()
+        if not (gen / "ble_rf_tables.h").exists() or (gen / "ble_rf_tables.h").read_bytes() != t:
+            (gen / "ble_rf_tables.h").write_bytes(t)         # the radio's start-up program (Apache-2.0)
     flags.append(f'-DFELUCCA_ID="{PRODUCT}"')
     if VERSION:
         flags.append(f'-DFELUCCA_VERSION="{VERSION}"')
-    tc_all(("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
-           ("cc", "-c", FW / "hal" / "fm1_vec.S", "-o", OUT / "fm1_vec.o"),
-           ("cc", "-c", FW / "hal" / "fm1_isr.S", "-o", OUT / "fm1_isr.o"),
-           ("cc", "-c", FW / "hal" / "fm1_cpu1.S", "-o", OUT / "fm1_cpu1.o"),
+    ble_d = f'-DFELUCCA_BLE={os.environ.get("FELUCCA_BLE") == "1" and 1 or 0}'
+    tc_all(("cc", ble_d, "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
+           ("cc", ble_d, "-c", FW / "hal" / "fm1_vec.S", "-o", OUT / "fm1_vec.o"),
+           ("cc", ble_d, "-c", FW / "hal" / "fm1_isr.S", "-o", OUT / "fm1_isr.o"),
+           ("cc", ble_d, "-c", FW / "hal" / "fm1_cpu1.S", "-o", OUT / "fm1_cpu1.o"),
            ("cc", *flags, "-c", FW / "src" / "felucca.c", "-o", OUT / "felucca.o"))
     elf = OUT / "felucca.elf"
     tc("pi32v2/bin/ld", "-T", FW / "app.ld", OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o",

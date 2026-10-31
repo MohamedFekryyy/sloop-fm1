@@ -1,0 +1,61 @@
+name: ble-spike-target-build
+# SPIKE ONLY: compile-size evidence for the minimal receive-only BLE integration (draft branch
+# ble-spike). No release, no merge, no publication, no signing. Public fork: Actions minutes are free.
+on:
+  push:
+    branches: [ble-spike]
+  workflow_dispatch:
+
+jobs:
+  sizes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install JieLi pi32v2 toolchain
+        run: |
+          mkdir -p ~/.jieli
+          for i in 1 2 3 4 5; do
+            curl -fL --retry 2 --max-time 600 https://pkgman.jieliapp.com/s/linux-toolchain | tar -xJ -C ~/.jieli && break
+            echo "toolchain attempt $i failed; retrying"; sleep 15
+          done
+          test -x ~/.jieli/toolchain/pi32v2/bin/clang
+      - name: Clone AC79 SDK (packaging files only)
+        run: |
+          for i in 1 2 3 4 5; do
+            git clone --depth 1 -b AC79NN_SDK_V1.2.1_2023-12-13 https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git ~/fw-AC79_AIoT_SDK && break
+            echo "sdk attempt $i failed; retrying"; sleep 15
+          done
+          test -f ~/fw-AC79_AIoT_SDK/cpu/wl82/tools/uboot.boot
+      - name: Python deps
+        run: pip3 install Pillow
+      - name: Build baseline (FELUCCA_BLE=0)
+        run: |
+          python3 tools/build.py 2>&1 | tail -15
+          cp build/felucca.bin build/baseline.bin
+      - name: Build minimal receive-only BLE (FELUCCA_BLE=1)
+        run: |
+          set +e
+          FELUCCA_BLE=1 python3 tools/build.py 2>&1 | tail -40
+          echo "ble build exit: $?"
+          ls -la build/ 2>/dev/null
+          exit 0
+      - name: Build BLE + USB audio off (FELUCCA_BLE=1 FELUCCA_UAC=0)
+        run: |
+          set +e
+          FELUCCA_BLE=1 FELUCCA_UAC=0 python3 tools/build.py 2>&1 | tail -20
+          [ -f build/felucca.bin ] && cp build/felucca.bin build/ble_uac0.bin
+          exit 0
+      - name: Size report
+        run: |
+          python3 - <<'PY'
+          import os
+          SLOT = 581564
+          for f, label in (("build/baseline.bin", "baseline"),
+                           ("build/felucca.bin", "last-built variant"),
+                           ("build/ble_uac0.bin", "BLE + UAC off")):
+              if os.path.exists(f):
+                  n = os.path.getsize(f)
+                  print(f"{label}: {n} B of {SLOT} B slot; {'FREE ' + str(SLOT - n) if n <= SLOT else 'OVER BY ' + str(n - SLOT)}")
+              else:
+                  print(f"{label}: not produced")
+          PY

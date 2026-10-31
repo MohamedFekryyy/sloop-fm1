@@ -159,6 +159,16 @@ static volatile uint32_t so_w, so_r;
 #define MQ 64u
 static uint32_t midi_in_q[MQ], midi_out_q[MQ];
 static volatile uint32_t mi_w, mi_r, mo_w, mo_r;
+#if FELUCCA_BLE
+static void midi_in_push(uint32_t pkt)      /* ble_radio.c: a BLE packet into the shared input queue */
+{
+    if (mi_w - mi_r < MQ) {
+        midi_in_q[mi_w % MQ] = pkt;
+        RING_PUBLISH();
+        mi_w++;
+    }
+}
+#endif
 static volatile uint8_t midi_in_lost;               /* (2.8.3) a note message did not fit: seq.c ends the MIDI notes held
                                                      * (a lost note-off must not leave a note stuck; after Melodee 1.5) */
 static void midi_out_event(uint32_t pkt)            /* from the audio ISR */

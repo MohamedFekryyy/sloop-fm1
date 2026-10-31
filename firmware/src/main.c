@@ -253,11 +253,17 @@ UI_SMALL static void fm1_main(void)
     fm1_delay_ms(900);                                  /* (the logo stays a moment) */
     lcd_fill(0, 0, 240, 240, C_BLACK);
 
+#if FELUCCA_BLE
+    ble_radio_start();                     /* radio on, advertising (ble_radio.c) */
+#endif
     healthy_since = fm1_ms;
     for (;;) {
         uint32_t m = fm1_ms;
         fm1_wdt_feed();
         usb_retry(fm1_ms);
+#if FELUCCA_BLE
+        ble_radio_poll();
+#endif
         if ((uint32_t)(m - healthy_since) >= 30000u && bootguard.pending) {
             bootguard_clear(&bootguard);     /* 30 s of this boot, even if TIMER4 survived reset */
         }

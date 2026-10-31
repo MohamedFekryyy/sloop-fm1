@@ -47,12 +47,19 @@
 #ifndef FELUCCA_UAC_TONE
 #define FELUCCA_UAC_TONE 0       /* bench: the USB input sends test triangles instead of the music */
 #endif
+#ifndef FELUCCA_BLE
+#define FELUCCA_BLE 0            /* BLE MIDI in, receive-only spike (ble_radio.c): the WL82 radio, fm1-base's stack.
+                                  * Before usb.c: midi_in_push lives there */
+#endif
 #include "usb.c"
 #ifndef FELUCCA_UART
 #define FELUCCA_UART 1           /* TRS MIDI IN on UART1 (3.5 mm jack) */
 #endif
 #if FELUCCA_UART
 #include "midi_uart.c"
+#if FELUCCA_BLE
+#include "ble_radio.c"        /* BLE MIDI in (the radio IRQs feed midi_in_q, cable 2) */
+#endif
 #endif
 #define FELUCCA_ARRANGER 1
 #include "arranger.c"
