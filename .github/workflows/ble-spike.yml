@@ -52,6 +52,12 @@ jobs:
           set -o pipefail
           FELUCCA_BLE=1 FELUCCA_UAC=0 python3 tools/build.py 2>&1 | tail -20
           cp build/felucca.bin build/ble_uac0.bin
+      - name: Build BLE + all non-sample trims (BLE=1 UAC=0 ICONS=0 LOGO_TEXT=1)
+        if: always()
+        run: |
+          set -o pipefail
+          FELUCCA_BLE=1 FELUCCA_UAC=0 FELUCCA_ICONS=0 FELUCCA_LOGO_TEXT=1 python3 tools/build.py 2>&1 | tail -20
+          cp build/felucca.bin build/ble_trim.bin
       - name: Size report
         if: always()
         run: |
@@ -60,7 +66,8 @@ jobs:
           SLOT = 581564
           for f, label in (("build/baseline.bin", "baseline"),
                            ("build/ble.bin", "BLE"),
-                           ("build/ble_uac0.bin", "BLE + UAC off")):
+                           ("build/ble_uac0.bin", "BLE + UAC off"),
+                           ("build/ble_trim.bin", "BLE + UAC off + icons off + text logo")):
               if os.path.exists(f):
                   n = os.path.getsize(f)
                   print(f"{label}: {n} B of {SLOT} B slot; {'FREE ' + str(SLOT - n) if n <= SLOT else 'OVER BY ' + str(n - SLOT)}")
