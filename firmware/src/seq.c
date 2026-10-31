@@ -3419,7 +3419,7 @@ static void mclk_tempo(uint32_t dt)
         song.g[G_BPM] = (int16_t)clamp((int32_t)((t10 + 5u) / 10u), 40, 240);
 }
 
-static void mclk_event(uint32_t st, uint32_t src)  /* a realtime message; src 1 USB, 2 TRS */
+static void mclk_event(uint32_t st, uint32_t src)  /* a realtime message; src 1 USB, 2 TRS, 3 BLE */
 {
     uint32_t now = fm1_ms;
     if (!song.g[G_SYNC] || src != (uint32_t)song.g[G_SYNC])
@@ -3685,8 +3685,12 @@ static void events_block(uint32_t n)
         uint32_t d1 = (pkt >> 16) & 0x7Fu, d2 = (pkt >> 24) & 0x7Fu;
         track_t *t;
         mi_r++;
-        if ((pkt & 15u) == 0xFu) {                    /* clock / transport: cable 0 USB, 1 TRS */
+        if ((pkt & 15u) == 0xFu) {                    /* clock / transport: cable 0 USB, 1 TRS, 2 BLE */
+#if FELUCCA_BLE
+            mclk_event((pkt >> 8) & 0xFFu, ((pkt >> 4) & 15u) + 1u);   /* the cable + 1 = the SYNC source */
+#else
             mclk_event((pkt >> 8) & 0xFFu, ((pkt >> 4) & 15u) ? 2u : 1u);
+#endif
             continue;
         }
         if (song.g[G_RMCH] && ch == (uint32_t)song.g[G_RMCH] - 1u && st == 0xB0u && d1 >= REMOTE_CC0 &&

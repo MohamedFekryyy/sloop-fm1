@@ -337,6 +337,11 @@ class Builder:
         self.zones += entries
         self.kinds[name] = kind
 
+    def skip_set(self, name):
+        # FELUCCA_SKIP_SETS: the slot stays (stable set/preset indices for saved projects), the data goes;
+        # a set with no zones plays silent (eng_sample.c: no zone matches -> zi 0xFFFF -> v->s[6])
+        self.sets.append((name, len(self.zones), 0))
+
     def gm_kit(self, have_cc0):
         """one GM-mapped kit: the CC0 acoustic kit"""
         z0 = len(self.zones)
@@ -430,7 +435,9 @@ class Builder:
 
     def summary(self):
         brk = f", SLICE BREAK {self.brk['n']} samples" if self.brk else ""
-        return f"samples: {len(self.sets)} sets, {len(self.zones)} zones, {len(self.blob)} B ADPCM{brk}"
+        skipped = ", ".join(n for n, _, nz in self.sets if not nz and n != "NONE")
+        sil = f", {skipped} kept silent (FELUCCA_SKIP_SETS)" if skipped else ""
+        return f"samples: {len(self.sets)} sets, {len(self.zones)} zones, {len(self.blob)} B ADPCM{brk}{sil}"
 
 
 def input_key(have_cc0):
@@ -439,7 +446,8 @@ def input_key(have_cc0):
     here = Path(__file__).resolve().parent
     for p in (here / "gen_samples.py", here / "sampleio.py"):
         h.update(p.read_bytes())
-    h.update(repr((sys.version_info[:2], have_cc0, os.environ.get("FELUCCA_SLICE") == "1")).encode())   # sum() differs across versions
+    h.update(repr((sys.version_info[:2], have_cc0, os.environ.get("FELUCCA_SLICE") == "1",
+                   os.environ.get("FELUCCA_SKIP_SETS", ""))).encode())   # sum() differs across versions
     files = sorted(GENDIR.glob("*.wav"))
     if have_cc0:
         files += sorted(CC0.glob("*/*.wav"))
@@ -464,10 +472,14 @@ def main(out):
     except (OSError, ValueError):
         pass
     b = Builder()
+    skip = {s.strip() for s in os.environ.get("FELUCCA_SKIP_SETS", "").split(",") if s.strip()}
     if have_cc0:
         for name, kind in CC0_SETS:
             if kind != "kit":                       # the CC0 KIT feeds the GM kit
-                b.cc0_set(name, kind)
+                if name in skip:
+                    b.skip_set(name)
+                else:
+                    b.cc0_set(name, kind)
     b.gm_kit(have_cc0)
     if os.environ.get("FELUCCA_SLICE") == "1":       # SLICE's BREAK: only when that engine is built
         b.slice_break()                             # last: the sets' offsets stay as they were

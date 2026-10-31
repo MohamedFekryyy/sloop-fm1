@@ -187,7 +187,7 @@ def build_app():
             flags.append(f"-D{flag}={v}")
     ble = os.environ.get("FELUCCA_BLE") == "1"
     if ble:
-        flags += ["-Ifirmware/ble", "-DBLE_API=static"]  # unity build: the stack functions static
+        flags += ["-Ifirmware/ble", "-DBLE_API=static", "-DFL_UID=1"]  # unity build: static stack; the flash UID (the BLE address)
         gen = SRC / "build" / "gen"
         gen.mkdir(parents=True, exist_ok=True)
         t = (SRC / "firmware" / "hal" / "ble_rf_tables_v15.h").read_bytes()
