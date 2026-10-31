@@ -16,15 +16,15 @@ jobs:
           mkdir -p ~/.jieli
           curl -fL --retry 3 --max-time 600 https://pkgman.jieliapp.com/s/linux-toolchain -o /tmp/tc.tar.xz
           tar -xJf /tmp/tc.tar.xz -C ~/.jieli
-          find ~/.jieli -maxdepth 3 -type d | head -30
-          CLANG=$(find ~/.jieli -path '*/pi32v2/bin/clang' -type f | head -1)
+          TCROOT=$(ls -d ~/.jieli/jieli-linux-toolchains-*/ | head -1)
+          echo "toolchain root: $TCROOT"
+          ls -la "$TCROOT/pi32v2/bin/" | head -20
+          ln -sfn "${TCROOT%/}" ~/.jieli/toolchain
+          ls -la ~/.jieli/
+          CLANG=$(find -L ~/.jieli/toolchain -path '*/pi32v2/bin/clang*' -type f | head -1)
           echo "clang found at: $CLANG"
           test -n "$CLANG"
-          TCROOT=${CLANG%/pi32v2/bin/clang}
-          if [ "$TCROOT" != "$HOME/.jieli/toolchain" ]; then
-            ln -sfn "$TCROOT" ~/.jieli/toolchain
-          fi
-          ~/.jieli/toolchain/pi32v2/bin/clang --version | head -1
+          "$CLANG" --version | head -1
       - name: Clone AC79 SDK (packaging files only)
         run: |
           for i in 1 2 3 4 5; do
