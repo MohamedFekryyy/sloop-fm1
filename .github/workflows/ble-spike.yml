@@ -25,6 +25,7 @@ jobs:
           echo "clang found at: $CLANG"
           test -n "$CLANG"
           "$CLANG" --version | head -1
+          echo "JIELI_TOOLCHAIN=$HOME/.jieli/toolchain" >> "$GITHUB_ENV"
       - name: Clone AC79 SDK (packaging files only)
         run: |
           for i in 1 2 3 4 5; do
