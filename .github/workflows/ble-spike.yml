@@ -32,6 +32,7 @@ jobs:
             echo "sdk attempt $i failed; retrying"; sleep 15
           done
           test -f ~/fw-AC79_AIoT_SDK/cpu/wl82/tools/uboot.boot
+          echo "AC79_SDK=$HOME/fw-AC79_AIoT_SDK" >> "$GITHUB_ENV"
       - name: Python deps
         run: pip3 install Pillow
       - name: Build baseline (FELUCCA_BLE=0)
