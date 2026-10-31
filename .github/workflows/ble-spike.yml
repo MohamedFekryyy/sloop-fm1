@@ -41,6 +41,7 @@ jobs:
           set -o pipefail
           python3 tools/build.py 2>&1 | tail -15
           cp build/felucca.bin build/baseline.bin
+          cp build/felucca.fwsc build/baseline.fwsc   # the rollback image: byte-identical app to the pre-BLE tree
       - name: Feature size map (baseline, exact from the linked elf)
         run: |
           ~/.jieli/toolchain/common/bin/objdump -t build/felucca.elf > /tmp/syms.txt
@@ -152,9 +153,15 @@ jobs:
       - name: Host test suite (incl. BLE clock source test)
         if: always()
         run: |
-          set -o pipefail
           git checkout -- firmware/app.ld 2>/dev/null || true
-          bash tests/run_tests.sh 2>&1 | tail -45
+          set +e
+          bash tests/run_tests.sh > /tmp/hosttests.log 2>&1
+          rc=$?
+          set -e
+          if [ $rc -ne 0 ]; then echo "=== failing test context ==="; grep -n -B3 -A10 "FAIL" /tmp/hosttests.log | head -160; fi
+          tail -25 /tmp/hosttests.log
+          cp /tmp/hosttests.log build/hosttests.log
+          exit $rc
       - name: Upload firmware images (evidence, not a release)
         if: always()
         uses: actions/upload-artifact@v4
@@ -162,6 +169,10 @@ jobs:
           name: ble-spike-firmware
           path: |
             build/baseline.bin
+            build/baseline.fwsc
             build/ble_chosen.bin
+            build/felucca.fwsc
+            build/loader/ota.bin
+            build/hosttests.log
           if-no-files-found: ignore
           retention-days: 30
