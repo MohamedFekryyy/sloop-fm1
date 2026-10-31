@@ -42,6 +42,7 @@ jobs:
           python3 tools/build.py 2>&1 | tail -15
           cp build/felucca.bin build/baseline.bin
           cp build/felucca.fwsc build/baseline.fwsc   # the rollback image: byte-identical app to the pre-BLE tree
+          cp build/felucca.dis build/baseline.dis
       - name: Feature size map (baseline, exact from the linked elf)
         run: |
           ~/.jieli/toolchain/common/bin/objdump -t build/felucca.elf > /tmp/syms.txt
@@ -82,6 +83,7 @@ jobs:
           git checkout -- firmware/app.ld 2>/dev/null || true   # the real slot: undo any earlier enlargement
           FELUCCA_BLE=1 FELUCCA_LOGO_TEXT=1 FELUCCA_SKIP_SETS=HORNS python3 tools/build.py 2>&1 | tail -25
           cp build/felucca.bin build/ble_chosen.bin
+          cp build/felucca.dis build/chosen.dis
       - name: "RAM/pool measurement: BLE+trims, XIP window enlarged (MEASUREMENT ONLY, not a shippable image)"
         if: always()
         run: |
@@ -150,6 +152,42 @@ jobs:
             ls -l /tmp/preb/build/felucca.bin build/baseline.bin
             exit 1
           fi
+      - name: "ISR cost: baseline dis vs chosen dis, same toolchain (budget semantics evidence)"
+        if: always()
+        run: |
+          echo "=== baseline build (FELUCCA_BLE=0; binary already proven identical to pre-BLE 3f2f54f) ==="
+          python3 tests/target_budget.py build/baseline.dis tests/target_budget.txt | grep -E "alnk0|OVER|no budget" || true
+          echo "=== chosen build (FELUCCA_BLE=1 LOGO_TEXT SKIP_SETS=HORNS) ==="
+          python3 tests/target_budget.py build/chosen.dis tests/target_budget.txt | grep -E "alnk0|OVER|no budget" || true
+          echo "=== fm1_alnk0_irq machine-code diff (normalized: addresses and absolute hex masked) ==="
+          python3 - <<'PY'
+          import re
+          def fn(path, name):
+              out, cur = [], False
+              for ln in open(path):
+                  t = ln.strip()
+                  if t == name + ":":
+                      cur = True; continue
+                  if cur and re.match(r"^[A-Za-z_][A-Za-z_0-9.]*:$", t):
+                      break
+                  if cur:
+                      m = re.match(r"^\s*[0-9a-f]+:\s+((?:[0-9a-f]{2} )+)\s*(.*)$", ln)
+                      if m:
+                          ins = re.sub(r"0x[0-9a-f]+", "H", m.group(2))
+                          ins = re.sub(r"\b[0-9a-f]{5,}\b", "H", ins)
+                          out.append(ins)
+              return out
+          a = fn("build/baseline.dis", "fm1_alnk0_irq")
+          b = fn("build/chosen.dis", "fm1_alnk0_irq")
+          print("baseline ISR instructions:", len(a), " chosen ISR instructions:", len(b))
+          if a == b:
+              print("ISR INSTRUCTION STREAM IDENTICAL (normalized)")
+          else:
+              import difflib
+              print("ISR DIFFERS; first 20 diff lines:")
+              for d in list(difflib.unified_diff(a, b, lineterm=""))[:20]:
+                  print(d)
+          PY
       - name: Host test suite (incl. BLE clock source test)
         if: always()
         run: |
@@ -174,5 +212,7 @@ jobs:
             build/felucca.fwsc
             build/loader/ota.bin
             build/hosttests.log
+            build/baseline.dis
+            build/chosen.dis
           if-no-files-found: ignore
           retention-days: 30
