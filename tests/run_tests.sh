@@ -57,6 +57,8 @@ $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/ricochet_test" tests/ricochet_tes
 run "RICO: the bouncing balls (walls -> scale degrees, no keys, recording)" "$OUT/ricochet_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/seq2_test" tests/seq2_test.c -lm
 run "sequencer 2.0: no drift, ratchets, roll, erase / undo, ghost / hard, chords, mute / solo, nudge, locks" "$OUT/seq2_test"
+$CC -O2 -w -DFELUCCA_BLE=1 -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/ble_sync_test" tests/ble_sync_test.c -lm
+run "BLE MIDI clock: SYNC BLE source, filtering, lost-clock fallback (tests/ble_sync_test.c)" "$OUT/ble_sync_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/hold_rec_test" tests/hold_rec_test.c -lm
 run "2.8.3: a note held under others (live, recorded, overdubbed), MIDI in overflow" "$OUT/hold_rec_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -Ifirmware/hal -o "$OUT/len_test" tests/len_test.c -lm
