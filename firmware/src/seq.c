@@ -1527,7 +1527,9 @@ static int erasing(const track_t *t) { return trk_index(t) == er_trk && (er_lane
 /* ------------------------------------------------------- ricochet --- */
 /* AM_RICO: a generative mode. Balls bounce inside a regular polygon; every wall is a degree of the
  * track's scale, and a ball hitting a wall plays it. No keys held and no grid: the balls run free at
- * their own speed whatever the transport does, as the web toy of the same idea does; what they play is
+ * their own speed whatever the transport does, as the web toy of the same idea does - but while a
+ * master's clock comes in (GLO > SYSTEM > SYNC = USB or TRS) they keep its time instead, RATE against
+ * the beat (the same feel at 120 BPM), so RICO slows and hurries with the master; what they play is
  * recorded and goes to MIDI OUT like the arp's notes. On the drum track (and the unscaled maps: the GM
  * kit, SLICE) a wall plays that key of the track's own map.
  *   RATE  the balls' speed (1..6)    OCT  the balls (1..4)    GATE  the notes' length
@@ -1537,6 +1539,7 @@ static int erasing(const track_t *t) { return trk_index(t) == er_trk && (er_lane
  * on the device and on the host (tests/ricochet_test.c). */
 static void arp_end(track_t *t);
 static void arp_play(track_t *t, uint32_t n);
+static int mclk_on(void);
 
 #define RICO_RAD 400                                /* the polygon's radius (the field is 1024 x 1024) */
 #define RICO_BALL 18                                /* a ball's radius */
@@ -1742,7 +1745,10 @@ static uint32_t rico_note(const track_t *t, uint32_t wall)
 static void rico_tick(track_t *t, uint32_t adv)
 {
     uint32_t bpm = (uint32_t)song.g[G_BPM] ? (uint32_t)song.g[G_BPM] : 120u;
-    uint32_t dt = rico_udiv64((uint64_t)adv << 16, bpm * FS), i;
+    /* a master's clock coming in (GLO > SYSTEM > SYNC, and a pulse in the last 0.5 s): the balls keep
+     * its time - RATE reads against the beat, the same feel at 120 BPM, so the hits slow and hurry
+     * with the master's tempo. No clock: free at their own speed, as ever */
+    uint32_t dt = rico_udiv64((uint64_t)adv << 16, (mclk_on() ? 120u : bpm) * FS), i;
     int hit = -1;
     rico_config(t);
     for (i = 0; i < t->rico_balls; i++) {

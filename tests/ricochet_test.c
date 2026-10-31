@@ -208,6 +208,94 @@ int main(void)
     song.playing = 0;
     song.rec = 0;
 
+    /* clock sync (SYNC USB): while a master's clock runs, RATE is against the beat - a master at
+     * twice the tempo moves the balls twice as fast, at half the tempo half as fast; the clock
+     * gone, back to their own speed. Measured as one tick's travel of a fresh ball (no wall in
+     * the way): the sim's speed is a constant, so the travel is the dt the tick used */
+    {
+        track_t a, b;
+        double px, py, dfree120, dfree240, dfast, dslow, dback;
+        double tt;
+#define RICO_FRESH(x) do {                                                  \
+            memset(&(x), 0, sizeof (x));                                    \
+            (x).p[P_AMODE] = AM_RICO;                                       \
+            (x).p[P_ARATE] = 4;                                             \
+            (x).p[P_AOCT] = 1;                                              \
+            (x).p[P_ASWING] = 44;                                           \
+            (x).p[P_APROB] = 0;                                             \
+            rico_config(&(x));                                              \
+        } while (0)
+#define RICO_TRAVEL(x, adv) ({                                              \
+            px = (x).rico_px[0];                                            \
+            py = (x).rico_py[0];                                            \
+            rico_tick(&(x), (adv));                                         \
+            sqrt(((x).rico_px[0] - px) * ((x).rico_px[0] - px) +            \
+                 ((x).rico_py[0] - py) * ((x).rico_py[0] - py));            \
+        })
+        reset();
+        song.g[G_SYNC] = 0;
+        mi_r = mi_w;
+        RICO_FRESH(a);
+        dfree120 = RICO_TRAVEL(a, 32u * 120u);          /* CTL samples' worth at 120 */
+        song.g[G_BPM] = 240;
+        RICO_FRESH(a);
+        dfree240 = RICO_TRAVEL(a, 32u * 240u);          /* the same time at 240: no clock, no change */
+        song.g[G_BPM] = 120;
+        check(dfree120 > 100.0 && dfree240 > dfree120 * 0.98 && dfree240 < dfree120 * 1.02,
+              "no clock: the balls' speed does not follow the tempo");
+        /* the master's clock at 240 through the real MIDI-in path */
+        song.g[G_SYNC] = 1;                             /* USB */
+        tt = fm1_ms;
+        {
+            double next = tt;
+            for (i = 0; i < 900u; i++) {                /* 24+ pulses at 240: the tempo is learned */
+                int32_t out[CTL * 2];
+                while (next <= tt) {
+                    midi_in_q[mi_w % MQ] = 0xF80Fu;
+                    mi_w++;
+                    next += 60000.0 / 240.0 / 24.0;
+                }
+                fm1_ms = (uint32_t)tt;
+                mix_block(out, CTL);
+                tt += (double)CTL * 1000.0 / FS;
+            }
+        }
+        check(song.g[G_BPM] == 240, "the master's tempo shows (240)");
+        RICO_FRESH(b);
+        dfast = RICO_TRAVEL(b, 32u * 240u);
+        check(dfast > dfree120 * 1.9 && dfast < dfree120 * 2.1,
+              "a clock at twice the tempo: the balls twice as fast");
+        /* the master slows to 60 */
+        {
+            double next = tt;
+            for (i = 0; i < 4500u; i++) {               /* 3+ beats at 60 (the jump re-learns) */
+                int32_t out[CTL * 2];
+                while (next <= tt) {
+                    midi_in_q[mi_w % MQ] = 0xF80Fu;
+                    mi_w++;
+                    next += 60000.0 / 60.0 / 24.0;
+                }
+                fm1_ms = (uint32_t)tt;
+                mix_block(out, CTL);
+                tt += (double)CTL * 1000.0 / FS;
+            }
+        }
+        check(song.g[G_BPM] == 60, "the master's tempo shows (60)");
+        RICO_FRESH(b);
+        dslow = RICO_TRAVEL(b, 32u * 60u);
+        check(dslow > dfree120 * 0.45 && dslow < dfree120 * 0.55,
+              "a clock at half the tempo: the balls half as fast");
+        fm1_ms += 600u;                                 /* the master is gone */
+        RICO_FRESH(b);
+        dback = RICO_TRAVEL(b, 32u * 60u);
+        check(dback > dfree120 * 0.98 && dback < dfree120 * 1.02,
+              "the clock gone: back to their own speed");
+        song.g[G_SYNC] = 0;
+        mi_r = mi_w;
+#undef RICO_FRESH
+#undef RICO_TRAVEL
+    }
+
     /* the drum track: a wall plays that lane */
     reset();
     {
