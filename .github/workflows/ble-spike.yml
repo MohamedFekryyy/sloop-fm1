@@ -71,6 +71,13 @@ jobs:
           set -o pipefail
           FELUCCA_BLE=1 FELUCCA_UAC=0 FELUCCA_ICONS=0 FELUCCA_LOGO_TEXT=1 python3 tools/build.py 2>&1 | tail -20
           cp build/felucca.bin build/ble_trim.bin
+      - name: "Build the chosen fit: BLE + text logo + HORNS silent (real slot)"
+        if: always()
+        run: |
+          set -o pipefail
+          git checkout -- firmware/app.ld 2>/dev/null || true   # the real slot: undo any earlier enlargement
+          FELUCCA_BLE=1 FELUCCA_LOGO_TEXT=1 FELUCCA_SKIP_SETS=HORNS python3 tools/build.py 2>&1 | tail -25
+          cp build/felucca.bin build/ble_chosen.bin
       - name: "RAM/pool measurement: BLE+trims, XIP window enlarged (MEASUREMENT ONLY, not a shippable image)"
         if: always()
         run: |
@@ -93,6 +100,7 @@ jobs:
               for n, name in ble[:15]:
                   print(f"{n:>8} B  {name}")
           PY
+          git checkout -- firmware/app.ld || true
           exit 0
       - name: Size report
         if: always()
@@ -116,7 +124,8 @@ jobs:
           for f, label in (("build/baseline.bin", "baseline"),
                            ("build/ble.bin", "BLE"),
                            ("build/ble_uac0.bin", "BLE + UAC off"),
-                           ("build/ble_trim.bin", "BLE + UAC off + icons off + text logo")):
+                           ("build/ble_trim.bin", "BLE + UAC off + icons off + text logo"),
+                           ("build/ble_chosen.bin", "BLE + text logo + HORNS silent (chosen)")):
               if os.path.exists(f):
                   n = os.path.getsize(f)
                   print(f"{label}: {n} B of {SLOT} B slot; {'FREE ' + str(SLOT - n) if n <= SLOT else 'OVER BY ' + str(n - SLOT)}")
