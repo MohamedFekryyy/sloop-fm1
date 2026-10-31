@@ -98,8 +98,21 @@ jobs:
         if: always()
         run: |
           python3 - <<'PY'
-          import os
+          import os, re
           SLOT = 581564
+          # exact per-set sample footprint from the generated zone table
+          try:
+              h = open("build/gen/felucca_samples.h").read()
+              zb = h[h.find("SMP_ZONES["):h.find("SMP_SETS[")]
+              zones = [(int(a), int(b)) for a, b in re.findall(r"\{(\d+), (\d+), \d+, \d+, \d+, \d+, \d+, \d+, \d+, \d+, \d+\},", zb)]
+              sb = h[h.find("SMP_SETS["):]
+              for name, z0, nz in re.findall(r'\{"([A-Z]+)", (\d+), (\d+)\},', sb):
+                  zs = zones[int(z0):int(z0) + int(nz)]
+                  if zs:
+                      size = zs[-1][0] + (zs[-1][1] + 1) // 2 - zs[0][0]
+                      print(f"sample set {name}: {size} B across {len(zs)} zones")
+          except Exception as e:
+              print("sample breakdown failed:", e)
           for f, label in (("build/baseline.bin", "baseline"),
                            ("build/ble.bin", "BLE"),
                            ("build/ble_uac0.bin", "BLE + UAC off"),
