@@ -446,6 +446,8 @@ UI_SMALL static uint32_t graph_signature(void)
     if (pg->graph == GR_SLOTS)                       /* (a checksum over each slot) */
         for (i = 0; i < 4u; i++)
             h ^= (uint32_t)project_used(i) << (20u + i);
+    if (pg->fam == FAM_ARP && t->p[P_AMODE] == AM_RICO)
+        h ^= ui.frame / 2u;                      /* RICO: the balls move */
     if (pg->graph == GR_STEPS || pg->graph == GR_ROLL) {
         uint32_t ph = song.playing ? t->seq_idx : 0xFFFFu;
         if (pg->graph == GR_ROLL)                    /* (2.7.2 NOTES: the note under edit, the zoom, the sheet) */
@@ -735,6 +737,21 @@ UI_SMALL static void graph_big(void)
     }
 }
 
+/* RICO (seq.c): the ARP page's middle while the mode is on: the polygon the balls bounce in (the field
+ * is 1024 x 1024, Q16) and the balls; a hit on a wall plays its degree of the track's scale */
+UI_SMALL static void graph_rico(const track_t *t, uint16_t c)
+{
+    uint32_t i;
+    for (i = 0; i < t->rico_walls; i++) {
+        uint32_t j = (i + 1u) % t->rico_walls;
+        cv_line((int32_t)(((int64_t)t->rico_ax[i] * 240) >> 26), (int32_t)(((int64_t)t->rico_ay[i] * 124) >> 26),
+                (int32_t)(((int64_t)t->rico_ax[j] * 240) >> 26), (int32_t)(((int64_t)t->rico_ay[j] * 124) >> 26), c);
+    }
+    for (i = 0; i < t->rico_balls; i++)
+        te_disc((int32_t)(((int64_t)t->rico_px[i] * 240) >> 26), (int32_t)(((int64_t)t->rico_py[i] * 124) >> 26), 3,
+                C_WHITE);
+}
+
 UI_SMALL static void draw_graph(void)
 {
     const page_t *pg = cur_page();
@@ -795,7 +812,10 @@ UI_SMALL static void draw_graph(void)
             graph_user();
             break;
         default:
-            if (big_page(pg)) {
+            if (pg->fam == FAM_ARP && t->p[P_AMODE] == AM_RICO) {   /* RICO: the balls over the big values */
+                cv_oy = 0;
+                graph_rico(t, c);
+            } else if (big_page(pg)) {
                 cv_oy = 0;
                 graph_big();
             }
@@ -1012,6 +1032,25 @@ UI_SMALL static void draw_columns(void)
         if (!d || !d->label || d->label[0] == '-') {
             draw_column(c, "", "", "", C_HI, -1, ICON_AUTO);
             continue;
+        }
+        if (cur_page()->fam == FAM_ARP && TSEL->p[P_AMODE] == AM_RICO) {   /* RICO: what the knobs do now */
+            uint32_t pid = cur_page()->id[c];
+            if (pid == P_AMODE) {
+                draw_column(c, "MODE", "RICO", "", VAL(c), -1, ICON_AUTO);
+                continue;
+            }
+            if (pid == P_ARATE || pid == P_AOCT || pid == P_ASWING) {
+                fmt_int(val, pid == P_ARATE ? (int32_t)*vp + 1
+                       : pid == P_AOCT ? (int32_t)*vp
+                       : (int32_t)(3u + ((uint32_t)*vp * 9u + 50u) / 100u));
+                draw_column(c, pid == P_ARATE ? "SPD" : pid == P_AOCT ? "BALL" : "COR", val, "", VAL(c), -1,
+                            ICON_AUTO);
+                continue;
+            }
+            if (pid == P_AHOLD || pid == P_AORDER) {   /* unused under RICO */
+                draw_column(c, "", "", "", C_HI, -1, ICON_AUTO);
+                continue;
+            }
         }
         if (cur_page()->id[c] == G_INFO && cur_page()->scope == SC_GLOBAL && !usb.config) {   /* not connected: the
                                                        * USB status instead of the CPU (2.4: MIDI is MIDI OUT, ROUT is IN) */
