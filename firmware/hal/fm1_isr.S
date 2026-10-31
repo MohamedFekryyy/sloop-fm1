@@ -18,8 +18,3 @@
 
 	FM1_ISR isr_timer5, fm1_timer5_irq
 	FM1_ISR isr_alnk0, fm1_alnk0_irq
-
-#if FELUCCA_BLE
-	FM1_ISR isr_ble_rx, ble_wl82_rx_irq        /* IRQ 29: the BLE baseband's RX (firmware/ble) */
-	FM1_ISR isr_ble_event, ble_wl82_event_irq  /* IRQ 45: its connection-event tick */
-#endif
