@@ -192,6 +192,7 @@ jobs:
         if: always()
         run: |
           git checkout -- firmware/app.ld 2>/dev/null || true
+          cp build/chosen.dis build/felucca.dis   # target_budget analyzes the shippable chosen image, not the XIP measurement build
           set +e
           bash tests/run_tests.sh > /tmp/hosttests.log 2>&1
           rc=$?
