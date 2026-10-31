@@ -21,4 +21,8 @@ grain_render 1734
 grain_block 138
 slicer_track 825
 drums_mix 6153
-fm1_alnk0_irq 174
+# SLOOP 2.7 (ba54ba5) moved the two-core load tracking (cpu1_load_half, the shed history, cpu_q8)
+# into the ISR; the 174 line was SLOOP 2.0's and was never recalibrated (upstream's 2.7 tree fails
+# this line identically: audio.c is untouched by RICO / BLE). 262 measured from build/felucca.dis,
+# CI runs 41211359972 and 41212026607 (static count, identical both times).
+fm1_alnk0_irq 262
