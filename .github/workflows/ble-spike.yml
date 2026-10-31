@@ -55,18 +55,21 @@ jobs:
               print(f"{n:>8} B  {sect:<10} {name}")
           PY
       - name: Build minimal receive-only BLE (FELUCCA_BLE=1)
+        continue-on-error: true   # exploratory: expected to overflow the slot; the size report carries its number
         run: |
           set -o pipefail
           FELUCCA_BLE=1 python3 tools/build.py 2>&1 | tail -40
           cp build/felucca.bin build/ble.bin
       - name: Build BLE + USB audio off (FELUCCA_BLE=1 FELUCCA_UAC=0)
         if: always()
+        continue-on-error: true   # exploratory: expected to overflow the slot
         run: |
           set -o pipefail
           FELUCCA_BLE=1 FELUCCA_UAC=0 python3 tools/build.py 2>&1 | tail -20
           cp build/felucca.bin build/ble_uac0.bin
       - name: Build BLE + all non-sample trims (BLE=1 UAC=0 ICONS=0 LOGO_TEXT=1)
         if: always()
+        continue-on-error: true   # exploratory: expected to overflow the slot
         run: |
           set -o pipefail
           FELUCCA_BLE=1 FELUCCA_UAC=0 FELUCCA_ICONS=0 FELUCCA_LOGO_TEXT=1 python3 tools/build.py 2>&1 | tail -20
@@ -132,3 +135,33 @@ jobs:
               else:
                   print(f"{label}: not produced")
           PY
+      - name: "Baseline binary equivalence: FELUCCA_BLE=0 build vs the pre-BLE tree (3f2f54f)"
+        if: always()
+        run: |
+          set -o pipefail
+          git fetch --depth 1 origin 3f2f54fa6d0eb108781d1abc6812cb37ede27ee5
+          git worktree add --detach /tmp/preb 3f2f54fa6d0eb108781d1abc6812cb37ede27ee5
+          (cd /tmp/preb && python3 tools/build.py > /tmp/preb.log 2>&1)
+          if cmp -s /tmp/preb/build/felucca.bin build/baseline.bin; then
+            echo "BASELINE BINARY IDENTICAL to the pre-BLE tree (3f2f54f)"
+          else
+            echo "BASELINE BINARY DIFFERS from the pre-BLE tree"
+            ls -l /tmp/preb/build/felucca.bin build/baseline.bin
+            exit 1
+          fi
+      - name: Host test suite (incl. BLE clock source test)
+        if: always()
+        run: |
+          set -o pipefail
+          git checkout -- firmware/app.ld 2>/dev/null || true
+          bash tests/run_tests.sh 2>&1 | tail -45
+      - name: Upload firmware images (evidence, not a release)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ble-spike-firmware
+          path: |
+            build/baseline.bin
+            build/ble_chosen.bin
+          if-no-files-found: ignore
+          retention-days: 30
