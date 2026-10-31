@@ -11,18 +11,25 @@ analog_render 638
 digital_render 333
 phase_render 79
 lofi_render 128
-sample_render 126
+# SAMPLE: rewritten by SLOOP 2.7 (looping user samples) and 2.8.4 (91f3018: the pitch follows the
+# top keys); 126 was 2.0-era. 593 measured identical in the baseline and chosen builds (run 41214633183).
+sample_render 593
 formant_render 314
 trio_render 341
 trio_pass 175
 drawbar_render 267
 drawbar_block 102
-grain_render 1734
+# GRAIN: 2.8.4's starvation fix (91f3018) grew the loop; 1734 predates it. 2387 measured identical
+# in the baseline and chosen builds (run 41214633183).
+grain_render 2387
 grain_block 138
 slicer_track 825
-drums_mix 6153
+# drums_mix: 2.8.4's fade fix (91f3018: the mix rounds to the nearest) grew it; 6153 predates it.
+# 6811 measured identical in the baseline and chosen builds (run 41214633183).
+drums_mix 6811
 # SLOOP 2.7 (ba54ba5) moved the two-core load tracking (cpu1_load_half, the shed history, cpu_q8)
-# into the ISR; the 174 line was SLOOP 2.0's and was never recalibrated (upstream's 2.7 tree fails
-# this line identically: audio.c is untouched by RICO / BLE). 262 measured from build/felucca.dis,
-# CI runs 41211359972 and 41212026607 (static count, identical both times).
-fm1_alnk0_irq 262
+# into the ISR; the 174 line was SLOOP 2.0's and was never recalibrated (upstream's 2.7+ tree fails
+# this line identically: audio.c is untouched by RICO / BLE). 268 measured on the shippable images,
+# baseline and chosen identical (CI run 41214633183's evidence step; an earlier 262 was read from
+# the non-shippable XIP-measurement build's dis - the suite now analyzes build/chosen.dis).
+fm1_alnk0_irq 268
