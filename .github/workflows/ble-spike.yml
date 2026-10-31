@@ -14,11 +14,17 @@ jobs:
       - name: Install JieLi pi32v2 toolchain
         run: |
           mkdir -p ~/.jieli
-          for i in 1 2 3 4 5; do
-            curl -fL --retry 2 --max-time 600 https://pkgman.jieliapp.com/s/linux-toolchain | tar -xJ -C ~/.jieli && break
-            echo "toolchain attempt $i failed; retrying"; sleep 15
-          done
-          test -x ~/.jieli/toolchain/pi32v2/bin/clang
+          curl -fL --retry 3 --max-time 600 https://pkgman.jieliapp.com/s/linux-toolchain -o /tmp/tc.tar.xz
+          tar -xJf /tmp/tc.tar.xz -C ~/.jieli
+          find ~/.jieli -maxdepth 3 -type d | head -30
+          CLANG=$(find ~/.jieli -path '*/pi32v2/bin/clang' -type f | head -1)
+          echo "clang found at: $CLANG"
+          test -n "$CLANG"
+          TCROOT=${CLANG%/pi32v2/bin/clang}
+          if [ "$TCROOT" != "$HOME/.jieli/toolchain" ]; then
+            ln -sfn "$TCROOT" ~/.jieli/toolchain
+          fi
+          ~/.jieli/toolchain/pi32v2/bin/clang --version | head -1
       - name: Clone AC79 SDK (packaging files only)
         run: |
           for i in 1 2 3 4 5; do
